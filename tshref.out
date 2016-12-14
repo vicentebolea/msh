@@ -1,0 +1,100 @@
+make[1]: Entering directory `/afs/cs.cmu.edu/project/ics/im/labs/shlab/src'
+./sdriver.pl -t trace01.txt -s ./tsh -a "-p"
+#
+# trace01.txt - Process builtin quit command.
+#
+./sdriver.pl -t trace02.txt -s ./tsh -a "-p"
+#
+# trace02.txt - Run a foreground job.
+#
+tsh> quit
+./sdriver.pl -t trace03.txt -s ./tsh -a "-p"
+#
+# trace03.txt - Run a background job.
+#
+tsh> ./myspin 1 &
+[1] (26252) ./myspin 1 &
+./sdriver.pl -t trace04.txt -s ./tsh -a "-p"
+#
+# trace04.txt - Process jobs builtin command.
+#
+tsh> ./myspin 2 &
+[1] (26256) ./myspin 2 &
+tsh> ./myspin 3 &
+[2] (26258) ./myspin 3 &
+tsh> jobs
+[1] (26256) Running ./myspin 2 &
+[2] (26258) Running ./myspin 3 &
+./sdriver.pl -t trace05.txt -s ./tsh -a "-p"
+#
+# trace05.txt - Forward SIGINT to foreground job.
+#
+tsh> ./myspin 4
+Job [1] (26263) terminated by signal 2
+./sdriver.pl -t trace06.txt -s ./tsh -a "-p"
+#
+# trace06.txt - Forward SIGINT only to foreground job.
+#
+tsh> ./myspin 4 &
+[1] (26267) ./myspin 4 &
+tsh> ./myspin 5
+Job [2] (26269) terminated by signal 2
+tsh> jobs
+[1] (26267) Running ./myspin 4 &
+./sdriver.pl -t trace07.txt -s ./tsh -a "-p"
+#
+# trace07.txt - Forward SIGTSTP only to foreground job.
+#
+tsh> ./myspin 4 &
+[1] (26274) ./myspin 4 &
+tsh> ./myspin 5
+Job [2] (26276) stopped by signal 20
+tsh> jobs
+[1] (26274) Running ./myspin 4 &
+[2] (26276) Stopped ./myspin 5 
+./sdriver.pl -t trace08.txt -s ./tsh -a "-p"
+#
+# trace08.txt - Forward SIGINT to every process in foreground process group
+#
+tsh> ./mysplit 4
+Job [1] (26298) terminated by signal 2
+tsh> /bin/ps a
+  PID TTY      STAT   TIME COMMAND
+25181 pts/3    S      0:00 -usr/local/bin/tcsh -i
+26239 pts/3    S      0:00 make tshrefout
+26240 pts/3    S      0:00 /bin/sh -c make tests > tshref.out 2>&1
+26241 pts/3    S      0:00 make tests
+26295 pts/3    S      0:00 perl ./sdriver.pl -t trace08.txt -s ./tsh -a -p
+26296 pts/3    S      0:00 ./tsh -p
+26301 pts/3    R      0:00 /bin/ps a
+./sdriver.pl -t trace09.txt -s ./tsh -a "-p"
+#
+# trace09.txt - Forward SIGTSTP to every process in foreground process group
+#
+tsh> ./mysplit 4
+Job [1] (26305) stopped by signal 20
+tsh> jobs
+[1] (26305) Stopped ./mysplit 4 
+tsh> /bin/ps a
+  PID TTY      STAT   TIME COMMAND
+25181 pts/3    S      0:00 -usr/local/bin/tcsh -i
+26239 pts/3    S      0:00 make tshrefout
+26240 pts/3    S      0:00 /bin/sh -c make tests > tshref.out 2>&1
+26241 pts/3    S      0:00 make tests
+26302 pts/3    S      0:00 perl ./sdriver.pl -t trace09.txt -s ./tsh -a -p
+26303 pts/3    S      0:00 ./tsh -p
+26305 pts/3    T      0:00 ./mysplit 4
+26306 pts/3    T      0:00 ./mysplit 4
+26309 pts/3    R      0:00 /bin/ps a
+./sdriver.pl -t trace10.txt -s ./tsh -a "-p"
+#
+# trace10.txt - Tests whether the shell can handle SIGTSTP and SIGINT
+#     signals that come from other processes instead of the terminal.
+#
+tsh> ./mystop 2
+Job [1] (26359) stopped by signal 20
+tsh> jobs
+[1] (26359) Stopped ./mystop 2
+tsh> ./myint 2
+Job [2] (26362) terminated by signal 2
+make[1]: Leaving directory `/afs/cs.cmu.edu/project/ics/im/labs/shlab/src'
