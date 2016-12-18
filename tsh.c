@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <stdbool.h>
 
 /* Misc manifest constants */
 #define MAXLINE    1024   /* max line size */
@@ -165,6 +166,32 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+  char* argv[MAXARGS];
+  pid_t child = 0;
+  bool is_bg = false;
+  is_bg = parseline(cmdline, argv);
+
+  if (!builtin_cmd(argv)) {
+
+    if (0 == (child = fork())) {
+      setpgid(0, 0);                          // Change gid 
+      execve(argv[0], argv, environ);
+      perror("Error creating child process"); // This line will never be executed
+      exit(0);
+
+    } else {
+      if (!is_bg) {
+        addjob(jobs, child, FG, cmdline);
+        waitfg(child);
+
+      } else {
+        addjob(jobs, child, BG, cmdline);
+        pid_t jid = getjobpid(jobs, child)->jid;
+
+        printf("[%d] (%d) %s", jid, child, cmdline);
+      }
+    }
+  }
     return;
 }
 
@@ -177,52 +204,52 @@ void eval(char *cmdline)
  */
 int parseline(const char *cmdline, char **argv) 
 {
-    static char array[MAXLINE]; /* holds local copy of command line */
-    char *buf = array;          /* ptr that traverses command line */
-    char *delim;                /* points to first space delimiter */
-    int argc;                   /* number of args */
-    int bg;                     /* background job? */
+  static char array[MAXLINE]; /* holds local copy of command line */
+  char *buf = array;          /* ptr that traverses command line */
+  char *delim;                /* points to first space delimiter */
+  int argc;                   /* number of args */
+  int bg;                     /* background job? */
 
-    strcpy(buf, cmdline);
-    buf[strlen(buf)-1] = ' ';  /* replace trailing '\n' with space */
-    while (*buf && (*buf == ' ')) /* ignore leading spaces */
-	buf++;
+  strcpy(buf, cmdline);
+  buf[strlen(buf)-1] = ' ';  /* replace trailing '\n' with space */
+  while (*buf && (*buf == ' ')) /* ignore leading spaces */
+    buf++;
 
-    /* Build the argv list */
-    argc = 0;
+  /* Build the argv list */
+  argc = 0;
+  if (*buf == '\'') {
+    buf++;
+    delim = strchr(buf, '\'');
+  }
+  else {
+    delim = strchr(buf, ' ');
+  }
+
+  while (delim) {
+    argv[argc++] = buf;
+    *delim = '\0';
+    buf = delim + 1;
+    while (*buf && (*buf == ' ')) /* ignore spaces */
+      buf++;
+
     if (*buf == '\'') {
-	buf++;
-	delim = strchr(buf, '\'');
+      buf++;
+      delim = strchr(buf, '\'');
     }
     else {
-	delim = strchr(buf, ' ');
+      delim = strchr(buf, ' ');
     }
+  }
+  argv[argc] = NULL;
 
-    while (delim) {
-	argv[argc++] = buf;
-	*delim = '\0';
-	buf = delim + 1;
-	while (*buf && (*buf == ' ')) /* ignore spaces */
-	       buf++;
+  if (argc == 0)  /* ignore blank line */
+    return 1;
 
-	if (*buf == '\'') {
-	    buf++;
-	    delim = strchr(buf, '\'');
-	}
-	else {
-	    delim = strchr(buf, ' ');
-	}
-    }
-    argv[argc] = NULL;
-    
-    if (argc == 0)  /* ignore blank line */
-	return 1;
-
-    /* should the job run in the background? */
-    if ((bg = (*argv[argc-1] == '&')) != 0) {
-	argv[--argc] = NULL;
-    }
-    return bg;
+  /* should the job run in the background? */
+  if ((bg = (*argv[argc-1] == '&')) != 0) {
+    argv[--argc] = NULL;
+  }
+  return bg;
 }
 
 /* 
@@ -231,7 +258,15 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
-    return 0;     /* not a builtin command */
+  if (0 == strncmp(argv[0], "quit", MAXLINE)) {
+    exit(0); // just die
+  
+  } else if (0 == strncmp(argv[0], "jobs", MAXLINE)) {
+    listjobs(jobs);
+
+    return 1;     /* a builtin command */
+  }
+  return 0;     /* not a builtin command */
 }
 
 /* 
@@ -248,7 +283,8 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
-    return;
+  while(0 != fgpid(jobs));
+  return;
 }
 
 /*****************
@@ -262,7 +298,12 @@ void waitfg(pid_t pid)
  */
 void sigint_handler(int sig) 
 {
-    return;
+  pid_t to_kill;
+  while (0 != (to_kill = fgpid(jobs))) {
+    kill(-to_kill, sig);
+  }
+
+  return;
 }
 
 /*
@@ -272,7 +313,12 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
-    return;
+  pid_t to_kill;
+  while (0 != (to_kill = fgpid(jobs))) {
+    kill(-to_kill, sig);
+  }
+
+  return;
 }
 
 
@@ -311,14 +357,14 @@ void sigchld_handler(int sig)
 
     /* Was the job terminated by the receipt of an uncaught signal? */
     else if (WIFSIGNALED(status)) { 
-            child_jid = pid2jid(child_pid);
-        if (deletejob(jobs, child_pid))
+      child_jid = pid2jid(child_pid);
+      if (deletejob(jobs, child_pid))
         if (verbose)
-            printf("sigchld_handler: Job [%d] (%d) deleted\n", 
-               child_jid, child_pid);
-       
-        fprintf(stdout, "Job [%d] (%d) terminated by signal %d\n", 
-                child_jid, child_pid, WTERMSIG(status));
+          printf("sigchld_handler: Job [%d] (%d) deleted\n", 
+              child_jid, child_pid);
+
+      fprintf(stdout, "Job [%d] (%d) terminated by signal %d\n", 
+          child_jid, child_pid, WTERMSIG(status));
 
     }
 
